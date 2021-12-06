@@ -91,7 +91,7 @@ async function main() {
 	let old_stats: MongoDBstats;
 
 
-	let default_timeout: number = 1000;
+	let default_timeout: number = 60*1000; // 1m
 	let timeout_limit: number = 60*60*1000; // 1h
 	let timeout: number = default_timeout;
 	setInterval(async function () {
