@@ -1,0 +1,19 @@
+{
+  "name": "mongo-monitor",
+  "version": "1.0.0",
+  "description": "Application to monitor mongodb Database and Alert via Telegram Bot when no data new data entries are meade",
+  "main": "mongodb_alert.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@git.breadslice.de:dev/mongo-monitor.git"
+  },
+  "author": "Walter Hoos",
+  "license": "ISC",
+  "dependencies": {
+    "@types/mongodb": "^4.0.7",
+    "mongodb": "^4.2.1"
+  }
+}
