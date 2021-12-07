@@ -55,6 +55,7 @@ class MongoDBconnector {
         });
     }
 }
+let lastTimeout;
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
         let notifier = new TelegramNotifyer("bot2140834908", "AAHMHizO44TOo8L5fh3TdW0LQJIY1rJ9ogs", "2137572068");
@@ -64,35 +65,45 @@ function main() {
         let mdb = new MongoDBconnector(mongo_url, dbname);
         yield mdb.connect();
         let old_stats;
-        let default_timeout = 1000;
+        let default_timeout = 5000; // 5s
         let timeout_limit = 60 * 60 * 1000; // 1h
         let timeout = default_timeout;
-        setInterval(function () {
+        let checkFunction = function () {
             return __awaiter(this, void 0, void 0, function* () {
-                let stats = yield mdb.getCollectionStats();
-                console.log(stats);
-                if (old_stats) {
-                    if (stats.objects == old_stats.objects) {
-                        notifier.send_msg("No Database Update for " + timeout / 1000 + " seconds!");
-                        if ((timeout * 2) < timeout_limit) {
-                            timeout = timeout * 2;
-                        }
-                        else {
-                            timeout = timeout_limit;
-                        }
+                let areThereNoDatabaseUpdates = false;
+                try {
+                    let stats = yield mdb.getCollectionStats();
+                    areThereNoDatabaseUpdates = old_stats && old_stats.objects == stats.objects;
+                    console.log(`${Date()} object count: ${stats.objects} Check again in ${timeout / 1000} seconds.`);
+                    old_stats = stats;
+                }
+                catch (ex) {
+                    console.error(ex);
+                    areThereNoDatabaseUpdates = true;
+                }
+                if (areThereNoDatabaseUpdates) {
+                    notifier.send_msg("No Database Update for " + timeout / 1000 + " seconds!");
+                    if ((timeout * 2) < timeout_limit) {
+                        timeout = timeout * 2;
                     }
                     else {
-                        timeout = default_timeout;
+                        timeout = timeout_limit;
                     }
                 }
-                old_stats = stats;
-                yield setTimeout(() => { }, timeout);
+                else {
+                    timeout = default_timeout;
+                }
+                lastTimeout = setTimeout(checkFunction, timeout);
             });
-        }, 0);
+        };
+        checkFunction();
         process.on("SIGINT", function () {
             return __awaiter(this, void 0, void 0, function* () {
                 console.log("Caught SIGINT Signal");
                 yield mdb.disconnect();
+                if (lastTimeout) {
+                    clearTimeout(lastTimeout);
+                }
             });
         });
     });
