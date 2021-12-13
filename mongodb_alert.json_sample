@@ -16,7 +16,7 @@
         "mongodb_host": "localhost",
         "mongodb_port": "27017",
         "mongodb_database": "binance_depth",
-        "authentication": true,
+        "authentication": false,
         "mongodb_username": "",
         "mongodb_password": ""
     }
