@@ -1,26 +1,60 @@
 import {MongoClient, Db, Long, Timestamp} from 'mongodb';
 import {get} from 'https';
+var nconf = require('nconf');
+
+interface ConfigFile {
+	"general": {
+        "default_timeout": number,
+		"timeout_limit": number,
+        "enable_log": Boolean,
+		"enable_err": Boolean,
+        "enable_telegram_alert": Boolean,
+    },
+    "telegram": {
+        "bot_name": string, 
+        "bot_key": string,
+        "chatid": string,
+        "telegram_url": string,
+    },
+    "mongodb": {
+        "mongodb_host": string,
+        "mongodb_port": string,
+        "mongodb_database": string,
+        "authentication": Boolean,
+        "mongodb_username": string,
+        "mongodb_password": string,
+    }
+}
 
 class TelegramNotifyer {
+	bot_enable: Boolean;
 	bot: string;
 	key: string;
 	chatid: string;
-	url: string;
+	uri: string;
 
-	constructor(bot: string, key: string, chatid: string, url: string = "https://api.telegram.org") {
+	constructor(bot_enable: Boolean, bot: string, key: string, chatid: string, url: string = "https://api.telegram.org") {
+		this.bot_enable = bot_enable;
 		this.bot = bot;
 		this.key = key;
 		this.chatid = chatid;
 		if (url.charAt(url.length -1) != "/") {
 			url = url + "/";
 		}
-		this.url = url;
+		this.uri = url;
 	}
 
 	send_msg(message: string) {
-		let botUrl: string = this.url + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
-		get(botUrl);
-		console.log("Telegram Message dispatched!");
+		if (this.bot_enable) {
+			let botUrl: string = this.uri + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
+			try {
+				get(botUrl);
+				Logger.log("Telegram Message dispatched!");
+			} catch (e: any) {
+				Logger.error("could not send telegram message!");
+				Logger.error(e);
+			}
+		}
 	}
 }
 
@@ -50,24 +84,43 @@ class MongoDBconnector {
 	mdb?: Db;
 	mclient: MongoClient;
 	knownCollections: string[] = [];
+	telegramAlert: TelegramNotifyer;
 
 	
-	constructor(mongo_url: string, dbname: string) {
-		this.db_url = mongo_url;
-		this.db_name = dbname;
+	constructor(configFile: ConfigFile, telegramAlert: TelegramNotifyer) {
+		if (configFile.mongodb.authentication) {
+			this.db_url = "mongodb://" + configFile.mongodb.mongodb_username + ":" + configFile.mongodb.mongodb_password + "@" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port + "?retryWrites=true&w=majority&authSource=" + configFile.mongodb.mongodb_database;
+		} else {
+			this.db_url = "mongodb://" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port;
+		}
+		Logger.log("Database URI: " + this.db_url);
+		this.db_name = configFile.mongodb.mongodb_database;
+		this.telegramAlert = telegramAlert;
 		this.mclient = new MongoClient(this.db_url);
-
 	}
 
 	async connect() {
 		await this.mclient.connect();
-		console.log("Mongodb connected");
+		Logger.log("Mongodb connected");
 		this.mdb = this.mclient.db(this.db_name);
+
+		this.mclient.on('close', this.retry_connection);
+		this.mclient.on('reconnect', this.reconnected);
 	}
 
 	async disconnect() {
 		await this.mclient.close();
-		console.log("Mongodb disconnected");
+		Logger.log("Mongodb disconnected");
+	}
+
+	retry_connection() {
+		Logger.error("Lost Database connection, retrying...");
+		this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!");
+	}
+
+	reconnected() {
+		Logger.log("MongoDB reconnected, go back to sleep");
+		this.telegramAlert.send_msg("MongoDB reconnected");
 	}
 
 	async getCollectionStats() {
@@ -78,35 +131,59 @@ class MongoDBconnector {
 
 let lastTimeout: NodeJS.Timeout;
 
+
+module Logger {
+	let configFile: ConfigFile;
+	export function log(msg: String) {
+		if (configFile.general.enable_log) {
+			console.log(msg);
+		}
+	}
+
+	export function error(msg: String) {
+		if (configFile.general.enable_err) {
+			console.error(msg);
+		}
+	}
+
+	export function setConfig(config: ConfigFile) {
+		configFile = config;
+	}
+}
+
 async function main() {
 
-	let notifier = new TelegramNotifyer("bot2140834908", "AAHMHizO44TOo8L5fh3TdW0LQJIY1rJ9ogs", "2137572068");
+	// read config file
+	nconf.file({ file: 'mongodb_alert.json' });
 	
-	const mongo_url: string = "mongodb://localhost:27017";
-	// const mongo_url: string = "mongodb://binance_depth:9iegZ3fDZTkPPQRMqJZ2@dev-sql.slice.local:27017?retryWrites=true&w=majority&authSource=binance_depth";
-	const dbname: string = "binance_depth";
+	let configFile: ConfigFile = nconf.get();
+	Logger.setConfig(configFile);
+	Logger.log("starting up...");
+
+	var notifier: TelegramNotifyer = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
 	
-	
-	let mdb = new MongoDBconnector(mongo_url, dbname);
+	let mdb = new MongoDBconnector(configFile, notifier);
 	await mdb.connect();
 
 	let old_stats: MongoDBstats;
 
-
-	let default_timeout: number = 5000; // 5s
-	let timeout_limit: number = 60*60*1000; // 1h
+	let default_timeout: number = configFile.general.default_timeout;
+	let timeout_limit: number = configFile.general.timeout_limit;
 	let timeout: number = default_timeout;
 
+	// check the database for new entries with backoff function
 	let checkFunction = async function() {
 		let areThereNoDatabaseUpdates = false;
 		try {
 			let stats = await mdb.getCollectionStats();
 
 			areThereNoDatabaseUpdates = old_stats && old_stats.objects == stats.objects;
-			console.log(`${Date()} object count: ${stats.objects} Check again in ${timeout/1000} seconds.`);
+			if (configFile.general.enable_log) {
+				console.log(`${Date()} object count: ${stats.objects} Check again in ${timeout/1000} seconds.`);
+			}
 			old_stats = stats;
-		} catch (ex) {
-			console.error(ex);
+		} catch (ex: any) {
+			Logger.error(ex);
 			areThereNoDatabaseUpdates = true;
 		}
 
@@ -127,7 +204,7 @@ async function main() {
 	checkFunction();
 
 	process.on("SIGINT", async function() {
-		console.log("Caught SIGINT Signal");
+		Logger.log("Caught SIGINT Signal");
 		await mdb.disconnect();
 
 		if (lastTimeout) {

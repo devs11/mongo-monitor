@@ -1,0 +1,23 @@
+{
+    "general": {
+        "default_timeout": 5000,
+        "timeout_limit": 3600000,
+        "enable_log": true,
+        "enable_err": true,
+        "enable_telegram_alert": false
+    },
+    "telegram": {
+        "bot_name": "", 
+        "bot_key": "",
+        "chatid": "",
+        "telegram_url": "https://api.telegram.org"
+    },
+    "mongodb": {
+        "mongodb_host": "localhost",
+        "mongodb_port": "27017",
+        "mongodb_database": "binance_depth",
+        "authentication": true,
+        "mongodb_username": "",
+        "mongodb_password": ""
+    }
+}
