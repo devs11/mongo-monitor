@@ -46,7 +46,6 @@ class MongoDBconnector {
         else {
             this.db_url = "mongodb://" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port;
         }
-        Logger.log("Database URI: " + this.db_url);
         this.db_name = configFile.mongodb.mongodb_database;
         this.telegramAlert = telegramAlert;
         this.mclient = new mongodb_1.MongoClient(this.db_url);
