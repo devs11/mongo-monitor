@@ -10,7 +10,8 @@
         "bot_name": "", 
         "bot_key": "",
         "chatid": "",
-        "telegram_url": "https://api.telegram.org"
+        "telegram_url": "https://api.telegram.org",
+        "telegram_prefix": ""
     },
     "mongodb": {
         "mongodb_host": "localhost",

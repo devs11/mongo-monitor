@@ -1,6 +1,8 @@
 import {MongoClient, Db, Long, Timestamp} from 'mongodb';
 import {get} from 'https';
 var nconf = require('nconf');
+var os = require("os");
+var path = require('path');
 
 interface ConfigFile {
 	"general": {
@@ -15,6 +17,7 @@ interface ConfigFile {
         "bot_key": string,
         "chatid": string,
         "telegram_url": string,
+		"telegram_prefix": string,
     },
     "mongodb": {
         "mongodb_host": string,
@@ -32,20 +35,25 @@ class TelegramNotifyer {
 	key: string;
 	chatid: string;
 	uri: string;
+	prefix: string;
 
-	constructor(bot_enable: Boolean, bot: string, key: string, chatid: string, url: string = "https://api.telegram.org") {
-		this.bot_enable = bot_enable;
-		this.bot = bot;
-		this.key = key;
-		this.chatid = chatid;
-		if (url.charAt(url.length -1) != "/") {
-			url = url + "/";
+
+	constructor(configFile: ConfigFile) {
+		this.bot_enable = configFile.general.enable_telegram_alert;
+		this.bot = configFile.telegram.bot_name;
+		this.key = configFile.telegram.bot_key;
+		this.chatid = configFile.telegram.chatid;
+		if (configFile.telegram.telegram_url.charAt(configFile.telegram.telegram_url.length -1) != "/") {
+			this.uri = configFile.telegram.telegram_url + "/";
+		} else {
+			this.uri = configFile.telegram.telegram_url;
 		}
-		this.uri = url;
+		this.prefix = configFile.telegram.telegram_prefix;
 	}
 
 	send_msg(message: string) {
 		if (this.bot_enable) {
+			message = this.prefix + " " + message;
 			let botUrl: string = this.uri + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
 			try {
 				get(botUrl);
@@ -159,10 +167,12 @@ async function main() {
 	Logger.setConfig(configFile);
 	Logger.log("starting up...");
 
-	var notifier: TelegramNotifyer = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
+	var notifier: TelegramNotifyer = new TelegramNotifyer(configFile);
 	
 	let mdb = new MongoDBconnector(configFile, notifier);
 	await mdb.connect();
+
+	notifier.send_msg("[" + os.hostname() + "] " + path.basename(__filename) + " started");
 
 	let old_stats: MongoDBstats;
 

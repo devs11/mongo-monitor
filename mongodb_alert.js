@@ -12,19 +12,25 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongodb_1 = require("mongodb");
 const https_1 = require("https");
 var nconf = require('nconf');
+var os = require("os");
+var path = require('path');
 class TelegramNotifyer {
-    constructor(bot_enable, bot, key, chatid, url = "https://api.telegram.org") {
-        this.bot_enable = bot_enable;
-        this.bot = bot;
-        this.key = key;
-        this.chatid = chatid;
-        if (url.charAt(url.length - 1) != "/") {
-            url = url + "/";
+    constructor(configFile) {
+        this.bot_enable = configFile.general.enable_telegram_alert;
+        this.bot = configFile.telegram.bot_name;
+        this.key = configFile.telegram.bot_key;
+        this.chatid = configFile.telegram.chatid;
+        if (configFile.telegram.telegram_url.charAt(configFile.telegram.telegram_url.length - 1) != "/") {
+            this.uri = configFile.telegram.telegram_url + "/";
         }
-        this.uri = url;
+        else {
+            this.uri = configFile.telegram.telegram_url;
+        }
+        this.prefix = configFile.telegram.telegram_prefix;
     }
     send_msg(message) {
         if (this.bot_enable) {
+            message = this.prefix + " " + message;
             let botUrl = this.uri + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
             try {
                 (0, https_1.get)(botUrl);
@@ -109,9 +115,10 @@ function main() {
         let configFile = nconf.get();
         Logger.setConfig(configFile);
         Logger.log("starting up...");
-        var notifier = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
+        var notifier = new TelegramNotifyer(configFile);
         let mdb = new MongoDBconnector(configFile, notifier);
         yield mdb.connect();
+        notifier.send_msg("[" + os.hostname() + "] " + path.basename(__filename) + " started");
         let old_stats;
         let default_timeout = configFile.general.default_timeout;
         let timeout_limit = configFile.general.timeout_limit;
